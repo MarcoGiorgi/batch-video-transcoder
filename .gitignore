@@ -1,0 +1,46 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET generated files
+TestResults/
+*.nupkg
+*.snupkg
+*.coverage
+*.coveragexml
+coverage/
+
+# Logs and runtime reports
+logs/
+transcode-report/
+*.log
+report.json
+report.csv
+
+# Local media samples and generated video outputs
+VideoSample/
+samples/
+test-media/
+*.converted.mkv
+*.dvdremux.mkv
+*.ffconcat
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local environment overrides
+.env
+.env.*
+appsettings.Development.json
