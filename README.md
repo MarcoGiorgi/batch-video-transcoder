@@ -11,11 +11,12 @@ It supports three strategies:
 ## Project Structure
 
 ```text
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\batch-video-transcoder.csproj
+batch-video-transcoder.sln
+batch-video-transcoder/
+  batch-video-transcoder.csproj
 ```
 
-The produced assembly is named `batch-video-transcoder.exe`.
+The produced assembly is named `batch-video-transcoder.exe` on Windows and `batch-video-transcoder` on Linux/macOS.
 
 ## Requirements
 
@@ -31,16 +32,34 @@ sudo apt install ffmpeg
 
 The `ffmpeg` package also includes `ffprobe`.
 
-On Windows, install ffmpeg and add its `bin` folder to `PATH`, or pass explicit binary paths:
-
-```powershell
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "E:\Projects\Brains\VideoUtilities\BVT\VideoSample" --out "E:\Projects\Brains\VideoUtilities\BVT\transcode-report" --ffmpeg "C:\ffmpeg\bin\ffmpeg.exe" --ffprobe "C:\ffmpeg\bin\ffprobe.exe"
-```
+On Windows, install ffmpeg and add its `bin` folder to `PATH`, or pass explicit binary paths with `--ffmpeg` and `--ffprobe`.
 
 ## Build
 
+From the repository root:
+
+```bash
+dotnet build batch-video-transcoder.sln
+```
+
+## Running the Application
+
+You can run from source with `dotnet run`:
+
+```bash
+dotnet run --project batch-video-transcoder -- report --root "/path/to/movies" --out "/path/to/transcode-report"
+```
+
+Or run the compiled executable after building:
+
+```bash
+./batch-video-transcoder/bin/Debug/net8.0/batch-video-transcoder report --root "/path/to/movies" --out "/path/to/transcode-report"
+```
+
+On Windows PowerShell:
+
 ```powershell
-dotnet build E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
+.\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "D:\Media\Movies" --out "D:\Media\transcode-report"
 ```
 
 ## CLI Examples
@@ -48,25 +67,25 @@ dotnet build E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
 Report only:
 
 ```bash
-dotnet run --project batch-video-transcoder -- report --root "/mnt/media/movies" --out "/mnt/media/transcode-report"
+dotnet run --project batch-video-transcoder -- report --root "/path/to/movies" --out "/path/to/transcode-report"
 ```
 
-Convert/remux only items marked with `NeedsProcessing=true`:
+Process every report row marked with `NeedsProcessing=true`:
 
 ```bash
-dotnet run --project batch-video-transcoder -- transcode --report "/mnt/media/transcode-report/report.json" --max-jobs 1
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --max-jobs 1
+```
+
+Process only DVD `VIDEO_TS` rows from an existing report:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --dvd-only --max-jobs 1
 ```
 
 Verify outputs:
 
 ```bash
-dotnet run --project batch-video-transcoder -- verify --report "/mnt/media/transcode-report/report.json"
-```
-
-Run the compiled executable against local Windows samples:
-
-```powershell
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "E:\Projects\Brains\VideoUtilities\BVT\VideoSample" --out "E:\Projects\Brains\VideoUtilities\BVT\transcode-report"
+dotnet run --project batch-video-transcoder -- verify --report "/path/to/transcode-report/report.json"
 ```
 
 ## Jellyfin Layout
@@ -179,6 +198,7 @@ Example strategy:
 - Errors on a single file do not stop the full scan.
 - Logs are written to the console and to files under `logs`.
 - In `transcode` mode, existing outputs are skipped; this is the resume capability.
+- `--dvd-only` restricts `transcode` mode to DVD `VIDEO_TS` rows only.
 - `--max-jobs N` controls how many ffmpeg jobs may run in parallel.
 - Each completed job prints progress, elapsed time, and estimated time remaining.
 
