@@ -11,16 +11,18 @@ It supports three strategies:
 ## Project Structure
 
 ```text
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\batch-video-transcoder.csproj
+batch-video-transcoder.sln
+batch-video-transcoder/
+  batch-video-transcoder.csproj
 ```
 
-The produced assembly is named `batch-video-transcoder.exe`.
+The produced assembly is named `batch-video-transcoder.exe` on Windows and `batch-video-transcoder` on Linux/macOS.
 
 ## Requirements
 
 - .NET 8 SDK
 - `ffmpeg` and `ffprobe` available in `PATH`
+- Optional on Linux: Intel Quick Sync via VAAPI (`h264_vaapi`) with a render device such as `/dev/dri/renderD128`
 
 On Debian/Ubuntu:
 
@@ -29,18 +31,36 @@ sudo apt update
 sudo apt install ffmpeg
 ```
 
-The `ffmpeg` package also includes `ffprobe`.
+The `ffmpeg` package also includes `ffprobe`. For VAAPI, make sure your ffmpeg build includes `h264_vaapi` and the user running BVT can access the render device, commonly `/dev/dri/renderD128`.
 
-On Windows, install ffmpeg and add its `bin` folder to `PATH`, or pass explicit binary paths:
-
-```powershell
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "E:\Projects\Brains\VideoUtilities\BVT\VideoSample" --out "E:\Projects\Brains\VideoUtilities\BVT\transcode-report" --ffmpeg "C:\ffmpeg\bin\ffmpeg.exe" --ffprobe "C:\ffmpeg\bin\ffprobe.exe"
-```
+On Windows, install ffmpeg and add its `bin` folder to `PATH`, or pass explicit binary paths with `--ffmpeg` and `--ffprobe`.
 
 ## Build
 
+From the repository root:
+
+```bash
+dotnet build batch-video-transcoder.sln
+```
+
+## Running the Application
+
+You can run from source with `dotnet run`:
+
+```bash
+dotnet run --project batch-video-transcoder -- report --root "/path/to/movies" --out "/path/to/transcode-report"
+```
+
+Or run the compiled executable after building:
+
+```bash
+./batch-video-transcoder/bin/Debug/net8.0/batch-video-transcoder report --root "/path/to/movies" --out "/path/to/transcode-report"
+```
+
+On Windows PowerShell:
+
 ```powershell
-dotnet build E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
+.\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "D:\Media\Movies" --out "D:\Media\transcode-report"
 ```
 
 ## CLI Examples
@@ -48,25 +68,39 @@ dotnet build E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
 Report only:
 
 ```bash
-dotnet run --project batch-video-transcoder -- report --root "/mnt/media/movies" --out "/mnt/media/transcode-report"
+dotnet run --project batch-video-transcoder -- report --root "/path/to/movies" --out "/path/to/transcode-report"
 ```
 
-Convert/remux only items marked with `NeedsProcessing=true`:
+Process every report row marked with `NeedsProcessing=true`:
 
 ```bash
-dotnet run --project batch-video-transcoder -- transcode --report "/mnt/media/transcode-report/report.json" --max-jobs 1
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --max-jobs 1
 ```
+
+Process legacy transcodes with automatic hardware acceleration when Intel Quick Sync VAAPI is available:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --video-encoder auto --vaapi-device "/dev/dri/renderD128"
+```
+
+Force software x264 encoding:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --video-encoder libx264
+```
+
+Force VAAPI and fail if it is unavailable:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --video-encoder h264_vaapi --vaapi-device "/dev/dri/renderD128"
+```
+
+Hardware encoding applies only to `LegacyTranscode` rows. DVD `VIDEO_TS` items remain lossless remux jobs and are never encoded.
 
 Verify outputs:
 
 ```bash
-dotnet run --project batch-video-transcoder -- verify --report "/mnt/media/transcode-report/report.json"
-```
-
-Run the compiled executable against local Windows samples:
-
-```powershell
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "E:\Projects\Brains\VideoUtilities\BVT\VideoSample" --out "E:\Projects\Brains\VideoUtilities\BVT\transcode-report"
+dotnet run --project batch-video-transcoder -- verify --report "/path/to/transcode-report/report.json"
 ```
 
 ## Jellyfin Layout
@@ -130,19 +164,25 @@ mpeg4, msmpeg4v3, mpeg2video, wmv1, wmv2, wmv3, flv1, rv40, indeo, cinepak, h263
 
 Tags `DX50`, `DIVX`, and `XVID` are also treated as legacy.
 
-Command:
+Default software command:
 
 ```bash
 ffmpeg -hide_banner -y -i "input.avi" -map 0 -c:v libx264 -preset medium -crf 18 -c:a copy -c:s copy "input.converted.mkv"
 ```
 
+VAAPI command shape:
+
+```bash
+ffmpeg -hide_banner -y -vaapi_device "/dev/dri/renderD128" -i "input.avi" -map 0 -vf format=nv12,hwupload -c:v h264_vaapi -qp 18 -c:a copy -c:s copy "input.converted.mkv"
+```
+
 Quality rules:
 
-- source file smaller than 1 GB: CRF 18
-- source file greater than or equal to 1 GB: CRF 16
+- source file smaller than 1 GB: CRF/QP 18
+- source file greater than or equal to 1 GB: CRF/QP 16
 - no upscaling
 - no frame-rate changes
-- no video filters
+- no video filters except the required VAAPI upload filter when `h264_vaapi` is selected
 - audio is always copied
 
 If subtitle copying fails, BVT retries with `-sn`.
@@ -179,6 +219,8 @@ Example strategy:
 - Errors on a single file do not stop the full scan.
 - Logs are written to the console and to files under `logs`.
 - In `transcode` mode, existing outputs are skipped; this is the resume capability.
+- `--video-encoder auto|libx264|h264_vaapi` controls the encoder used for legacy video transcodes.
+- `--vaapi-device PATH` sets the VAAPI render device used by `h264_vaapi`; the default is `/dev/dri/renderD128`.
 - `--max-jobs N` controls how many ffmpeg jobs may run in parallel.
 - Each completed job prints progress, elapsed time, and estimated time remaining.
 

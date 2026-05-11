@@ -24,14 +24,20 @@ public sealed class TranscodePlanner
     };
 
     private readonly string _preset;
+    private readonly string _videoEncoder;
+    private readonly string _vaapiDevice;
 
     /// <summary>
     /// Creates a planner with the desired x264 preset for legacy transcodes.
     /// </summary>
     /// <param name="preset">x264 preset to include in generated commands.</param>
-    public TranscodePlanner(string preset)
+    /// <param name="videoEncoder">Video encoder mode to show in generated commands.</param>
+    /// <param name="vaapiDevice">VAAPI device to show when h264_vaapi is selected.</param>
+    public TranscodePlanner(string preset, string videoEncoder, string vaapiDevice)
     {
         _preset = preset;
+        _videoEncoder = videoEncoder;
+        _vaapiDevice = vaapiDevice;
     }
 
     /// <summary>
@@ -61,7 +67,7 @@ public sealed class TranscodePlanner
             ? media.MovieFolderName
             : Path.GetFileNameWithoutExtension(media.FileName);
         var outputPath = Path.Combine(media.Directory, $"{outputBaseName}.converted.mkv");
-        var command = BuildDisplayCommand(media.FullPath, outputPath, _preset, crf, includeSubtitles: true, media.IsMultipart);
+        var command = BuildDisplayCommand(media.FullPath, outputPath, _preset, crf, includeSubtitles: true, media.IsMultipart, _videoEncoder, _vaapiDevice);
 
         if (ModernCodecs.Contains(media.VideoCodec))
         {
@@ -124,12 +130,22 @@ public sealed class TranscodePlanner
     /// <param name="crf">Recommended CRF value.</param>
     /// <param name="includeSubtitles">Whether the display command should copy subtitle streams.</param>
     /// <param name="isMultipart">Whether the input is represented by a concat list.</param>
+    /// <param name="videoEncoder">Video encoder mode to include in the display command.</param>
+    /// <param name="vaapiDevice">VAAPI render device to include when h264_vaapi is selected.</param>
     /// <returns>A report command string intended for review, not shell execution.</returns>
-    public static string BuildDisplayCommand(string input, string output, string preset, int crf, bool includeSubtitles, bool isMultipart = false)
+    public static string BuildDisplayCommand(string input, string output, string preset, int crf, bool includeSubtitles, bool isMultipart = false, string videoEncoder = "libx264", string vaapiDevice = "/dev/dri/renderD128")
     {
         var subtitleArgs = includeSubtitles ? "-c:s copy" : "-sn";
+        var normalizedEncoder = string.IsNullOrWhiteSpace(videoEncoder) ? "libx264" : videoEncoder.ToLowerInvariant();
         var inputArgs = isMultipart ? "-f concat -safe 0 -i <concat-list.txt>" : $"-i {Quote(input)}";
-        return $"ffmpeg -hide_banner -y {inputArgs} -map 0 -c:v libx264 -preset {preset} -crf {crf} -c:a copy {subtitleArgs} {Quote(output)}";
+        var encoderArgs = normalizedEncoder switch
+        {
+            "h264_vaapi" => $"-vaapi_device {Quote(vaapiDevice)} {inputArgs} -map 0 -vf format=nv12,hwupload -c:v h264_vaapi -qp {crf}",
+            "auto" => $"{inputArgs} -map 0 -c:v <auto: h264_vaapi if available, otherwise libx264> -crf-or-qp {crf}",
+            _ => $"{inputArgs} -map 0 -c:v libx264 -preset {preset} -crf {crf}"
+        };
+
+        return $"ffmpeg -hide_banner -y {encoderArgs} -c:a copy {subtitleArgs} {Quote(output)}";
     }
 
     /// <summary>

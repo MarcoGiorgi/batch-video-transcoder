@@ -32,6 +32,12 @@ public sealed class CliOptions
     /// <summary>Maximum number of parallel ffmpeg jobs.</summary>
     public int MaxConcurrentFfmpegJobs { get; private set; } = 1;
 
+    /// <summary>Video encoder mode for legacy transcodes: auto, libx264, or h264_vaapi.</summary>
+    public string VideoEncoder { get; private set; } = string.Empty;
+
+    /// <summary>VAAPI render device used when h264_vaapi is selected.</summary>
+    public string VaapiDevice { get; private set; } = string.Empty;
+
     /// <summary>True when the user requested usage information.</summary>
     public bool ShowHelp { get; private set; }
 
@@ -79,6 +85,8 @@ public sealed class CliOptions
                 case "--ffprobe": options.FfprobePath = value; break;
                 case "--ffmpeg": options.FfmpegPath = value; break;
                 case "--log": options.LogDirectory = value; break;
+                case "--video-encoder": options.VideoEncoder = value; break;
+                case "--vaapi-device": options.VaapiDevice = value; break;
                 case "--max-jobs":
                     if (int.TryParse(value, out var maxJobs))
                     {
@@ -104,6 +112,10 @@ public sealed class CliOptions
         LogDirectory = string.IsNullOrWhiteSpace(settings.LogDirectory) ? LogDirectory : settings.LogDirectory;
         MaxConcurrentFfmpegJobs = MaxConcurrentFfmpegJobs > 1 ? MaxConcurrentFfmpegJobs : settings.MaxConcurrentFfmpegJobs;
         MaxConcurrentFfmpegJobs = Math.Max(1, MaxConcurrentFfmpegJobs);
+        VideoEncoder = string.IsNullOrWhiteSpace(VideoEncoder) ? settings.VideoEncoder : VideoEncoder;
+        VideoEncoder = string.IsNullOrWhiteSpace(VideoEncoder) ? "auto" : VideoEncoder.ToLowerInvariant();
+        VaapiDevice = string.IsNullOrWhiteSpace(VaapiDevice) ? settings.VaapiDevice : VaapiDevice;
+        VaapiDevice = string.IsNullOrWhiteSpace(VaapiDevice) ? "/dev/dri/renderD128" : VaapiDevice;
     }
 
     /// <summary>
@@ -114,6 +126,12 @@ public sealed class CliOptions
     public bool IsValid(out string error)
     {
         error = string.Empty;
+        if (VideoEncoder is not "auto" and not "libx264" and not "h264_vaapi")
+        {
+            error = "--video-encoder must be one of: auto, libx264, h264_vaapi.";
+            return false;
+        }
+
         switch (Mode)
         {
             case "report":
@@ -153,8 +171,8 @@ public sealed class CliOptions
     public static void PrintUsage()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine("  batch-video-transcoder.exe report --root \"E:\\Media\\movies\" --out \"E:\\Media\\transcode-report\" [--preset medium]");
-        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1]");
+        Console.WriteLine("  batch-video-transcoder.exe report --root \"E:\\Media\\movies\" --out \"E:\\Media\\transcode-report\" [--preset medium] [--video-encoder auto]");
+        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1] [--video-encoder auto] [--vaapi-device /dev/dri/renderD128]");
         Console.WriteLine("  batch-video-transcoder.exe verify --report \"E:\\Media\\transcode-report\\report.json\"");
     }
 }

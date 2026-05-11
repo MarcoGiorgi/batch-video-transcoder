@@ -20,6 +20,12 @@ public sealed class AppSettings
     /// <summary>Maximum number of ffmpeg jobs allowed to run at the same time.</summary>
     public int MaxConcurrentFfmpegJobs { get; set; } = 1;
 
+    /// <summary>Video encoder mode for legacy transcodes: auto, libx264, or h264_vaapi.</summary>
+    public string VideoEncoder { get; set; } = "auto";
+
+    /// <summary>VAAPI render device used when h264_vaapi is selected.</summary>
+    public string VaapiDevice { get; set; } = "/dev/dri/renderD128";
+
     /// <summary>
     /// Loads settings from disk, falling back to defaults when the file is absent or malformed.
     /// </summary>

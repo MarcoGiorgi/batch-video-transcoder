@@ -74,7 +74,7 @@ public static class App
         var scanner = new MediaScanner();
         var dvdDetector = new DvdVideoTsDetector();
         var dvdAnalyzer = new DvdTitleAnalyzer();
-        var planner = new TranscodePlanner(options.Preset);
+        var planner = new TranscodePlanner(options.Preset, options.VideoEncoder, options.VaapiDevice);
         var rows = new List<MediaFileInfo>();
 
         // The scanner returns logical titles, not just files: a DVD folder and a multipart movie each become one row.
@@ -86,7 +86,7 @@ public static class App
         {
             try
             {
-                ConsoleLogger.Info($"Analisi: {item.FullPath}");
+                ConsoleLogger.Info($"Analyzing: {item.FullPath}");
                 var media = item.MediaType == MediaType.DVD_VIDEO_TS
                     ? await ProbeDvdBestEffortAsync(ffprobe, item, log)
                     : MergeProbe(item, await ffprobe.ProbeAsync(item.FullPath));
@@ -131,7 +131,7 @@ public static class App
     private static async Task<int> RunTranscodeAsync(CliOptions options, FileLogger log)
     {
         var rows = await ReadReportAsync(options.ReportPath!);
-        var executor = new FfmpegExecutor(options.FfmpegPath, log);
+        var executor = new FfmpegExecutor(options.FfmpegPath, log, options.VideoEncoder, options.VaapiDevice);
         if (!await executor.IsAvailableAsync())
         {
             ConsoleLogger.Error($"ffmpeg not found or not executable: {options.FfmpegPath}");

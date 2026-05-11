@@ -115,7 +115,7 @@ public sealed class FfprobeService
             startInfo.ArgumentList.Add(mediaPath!);
         }
 
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Impossibile avviare ffprobe.");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Unable to start ffprobe.");
         var output = await process.StandardOutput.ReadToEndAsync();
         var error = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();

@@ -10,16 +10,23 @@ public sealed class FfmpegExecutor
 {
     private readonly string _ffmpegPath;
     private readonly FileLogger _log;
+    private readonly string _videoEncoder;
+    private readonly string _vaapiDevice;
+    private VideoEncoderSelection? _encoderSelection;
 
     /// <summary>
     /// Creates an executor for a specific ffmpeg binary.
     /// </summary>
     /// <param name="ffmpegPath">Path or executable name for ffmpeg.</param>
     /// <param name="log">Logger used to record ffmpeg operations and stderr failures.</param>
-    public FfmpegExecutor(string ffmpegPath, FileLogger log)
+    /// <param name="videoEncoder">Video encoder mode for legacy transcodes: auto, libx264, or h264_vaapi.</param>
+    /// <param name="vaapiDevice">VAAPI render device used when h264_vaapi is selected.</param>
+    public FfmpegExecutor(string ffmpegPath, FileLogger log, string videoEncoder, string vaapiDevice)
     {
         _ffmpegPath = ffmpegPath;
         _log = log;
+        _videoEncoder = string.IsNullOrWhiteSpace(videoEncoder) ? "auto" : videoEncoder.ToLowerInvariant();
+        _vaapiDevice = string.IsNullOrWhiteSpace(vaapiDevice) ? "/dev/dri/renderD128" : vaapiDevice;
     }
 
     /// <summary>
@@ -78,7 +85,11 @@ public sealed class FfmpegExecutor
         var concatList = media.IsMultipart ? await CreateConcatListAsync(media.InputFiles) : null;
         try
         {
-            var args = BuildTranscodeArguments(media, output, preset, media.Decision.RecommendedCrf, includeSubtitles: true, concatList);
+            var encoder = await ResolveVideoEncoderAsync(cancellationToken);
+            ConsoleLogger.Info($"Video encoder: {encoder.DisplayName}");
+            _log.Info($"Selected video encoder for {media.FullPath}: {encoder.DisplayName}");
+
+            var args = BuildTranscodeArguments(media, output, preset, media.Decision.RecommendedCrf, includeSubtitles: true, concatList, encoder);
             var result = await RunAsync(args, cancellationToken);
             if (result.ExitCode == 0)
             {
@@ -91,7 +102,7 @@ public sealed class FfmpegExecutor
             _log.Warn($"ffmpeg subtitle-copy failure for {media.FullPath}: {result.Error}");
             DeletePartialOutput(output);
 
-            var retryArgs = BuildTranscodeArguments(media, output, preset, media.Decision.RecommendedCrf, includeSubtitles: false, concatList);
+            var retryArgs = BuildTranscodeArguments(media, output, preset, media.Decision.RecommendedCrf, includeSubtitles: false, concatList, encoder);
             var retry = await RunAsync(retryArgs, cancellationToken);
             if (retry.ExitCode != 0)
             {
@@ -170,9 +181,14 @@ public sealed class FfmpegExecutor
         }
     }
 
-    private static string[] BuildTranscodeArguments(MediaFileInfo media, string output, string preset, int crf, bool includeSubtitles, string? concatList)
+    private static string[] BuildTranscodeArguments(MediaFileInfo media, string output, string preset, int crf, bool includeSubtitles, string? concatList, VideoEncoderSelection encoder)
     {
         var args = new List<string> { "-hide_banner", "-y" };
+
+        if (encoder.UsesVaapi)
+        {
+            args.AddRange(["-vaapi_device", encoder.VaapiDevice!]);
+        }
 
         if (concatList is not null)
         {
@@ -183,7 +199,17 @@ public sealed class FfmpegExecutor
             args.AddRange(["-i", media.FullPath]);
         }
 
-        args.AddRange(["-map", "0", "-c:v", "libx264", "-preset", preset, "-crf", crf.ToString(), "-c:a", "copy"]);
+        args.AddRange(["-map", "0"]);
+        if (encoder.UsesVaapi)
+        {
+            args.AddRange(["-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", crf.ToString()]);
+        }
+        else
+        {
+            args.AddRange(["-c:v", "libx264", "-preset", preset, "-crf", crf.ToString()]);
+        }
+
+        args.AddRange(["-c:a", "copy"]);
 
         if (includeSubtitles)
         {
@@ -196,6 +222,50 @@ public sealed class FfmpegExecutor
 
         args.Add(output);
         return args.ToArray();
+    }
+
+    private async Task<VideoEncoderSelection> ResolveVideoEncoderAsync(CancellationToken cancellationToken)
+    {
+        if (_encoderSelection is not null)
+        {
+            return _encoderSelection;
+        }
+
+        if (_videoEncoder == "libx264")
+        {
+            return _encoderSelection = VideoEncoderSelection.Software();
+        }
+
+        var vaapiAvailable = await IsVaapiAvailableAsync(cancellationToken);
+        if (_videoEncoder == "h264_vaapi")
+        {
+            if (!vaapiAvailable)
+            {
+                throw new InvalidOperationException($"h264_vaapi was requested but is not available. Check ffmpeg encoder support and VAAPI device: {_vaapiDevice}");
+            }
+
+            return _encoderSelection = VideoEncoderSelection.Vaapi(_vaapiDevice);
+        }
+
+        if (vaapiAvailable)
+        {
+            return _encoderSelection = VideoEncoderSelection.Vaapi(_vaapiDevice);
+        }
+
+        _log.Info("h264_vaapi is not available; falling back to libx264.");
+        return _encoderSelection = VideoEncoderSelection.Software();
+    }
+
+    private async Task<bool> IsVaapiAvailableAsync(CancellationToken cancellationToken)
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists(_vaapiDevice))
+        {
+            return false;
+        }
+
+        var result = await RunAsync(["-hide_banner", "-encoders"], cancellationToken);
+        return result.ExitCode == 0 &&
+               result.Output.Contains("h264_vaapi", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string[] BuildDvdRemuxArguments(string inputIfo, string output, DvdRemuxAttempt attempt, string? concatList, IReadOnlyList<string> inputFiles, DvdInputMode inputMode)
@@ -281,7 +351,7 @@ public sealed class FfmpegExecutor
             startInfo.ArgumentList.Add(argument);
         }
 
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Impossibile avviare ffmpeg.");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Unable to start ffmpeg.");
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
@@ -302,6 +372,21 @@ public sealed class FfmpegExecutor
     }
 
     private sealed record ProcessResult(int ExitCode, string Output, string Error);
+
+    private sealed record VideoEncoderSelection(string Name, bool UsesVaapi, string? VaapiDevice)
+    {
+        public string DisplayName => UsesVaapi ? $"{Name} ({VaapiDevice})" : Name;
+
+        public static VideoEncoderSelection Software()
+        {
+            return new VideoEncoderSelection("libx264", UsesVaapi: false, VaapiDevice: null);
+        }
+
+        public static VideoEncoderSelection Vaapi(string vaapiDevice)
+        {
+            return new VideoEncoderSelection("h264_vaapi", UsesVaapi: true, VaapiDevice: vaapiDevice);
+        }
+    }
 }
 
 
