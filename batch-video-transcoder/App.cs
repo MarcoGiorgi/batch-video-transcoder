@@ -86,7 +86,7 @@ public static class App
         {
             try
             {
-                ConsoleLogger.Info($"Analisi: {item.FullPath}");
+                ConsoleLogger.Info($"Analyzing: {item.FullPath}");
                 var media = item.MediaType == MediaType.DVD_VIDEO_TS
                     ? await ProbeDvdBestEffortAsync(ffprobe, item, log)
                     : MergeProbe(item, await ffprobe.ProbeAsync(item.FullPath));
@@ -140,6 +140,14 @@ public static class App
         }
 
         var targets = rows.Where(x => x.Decision.NeedsProcessing).ToList();
+        if (options.DvdOnly)
+        {
+            targets = targets
+                .Where(x => x.MediaType == MediaType.DVD_VIDEO_TS || x.Decision.ProcessingStrategy == ProcessingStrategy.DvdRemux)
+                .ToList();
+            ConsoleLogger.Info("DVD-only processing enabled: legacy transcode rows will be skipped.");
+        }
+
         ConsoleLogger.Info($"Items to process: {targets.Count}, max parallel jobs: {options.MaxConcurrentFfmpegJobs}");
 
         var startedAt = DateTimeOffset.Now;

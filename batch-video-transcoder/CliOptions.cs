@@ -32,6 +32,9 @@ public sealed class CliOptions
     /// <summary>Maximum number of parallel ffmpeg jobs.</summary>
     public int MaxConcurrentFfmpegJobs { get; private set; } = 1;
 
+    /// <summary>True when transcode mode should process only DVD VIDEO_TS report rows.</summary>
+    public bool DvdOnly { get; private set; }
+
     /// <summary>True when the user requested usage information.</summary>
     public bool ShowHelp { get; private set; }
 
@@ -61,6 +64,12 @@ public sealed class CliOptions
             var key = args[i];
             if (!key.StartsWith("--", StringComparison.Ordinal))
             {
+                continue;
+            }
+
+            if (key == "--dvd-only")
+            {
+                options.DvdOnly = true;
                 continue;
             }
 
@@ -154,7 +163,7 @@ public sealed class CliOptions
     {
         Console.WriteLine("Usage:");
         Console.WriteLine("  batch-video-transcoder.exe report --root \"E:\\Media\\movies\" --out \"E:\\Media\\transcode-report\" [--preset medium]");
-        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1]");
+        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1] [--dvd-only]");
         Console.WriteLine("  batch-video-transcoder.exe verify --report \"E:\\Media\\transcode-report\\report.json\"");
     }
 }
