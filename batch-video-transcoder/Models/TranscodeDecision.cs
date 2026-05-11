@@ -26,3 +26,4 @@ public sealed class TranscodeDecision
     /// <summary>Display-only ffmpeg command for review; execution uses ArgumentList instead.</summary>
     public string FfmpegCommand { get; set; } = string.Empty;
 }
+

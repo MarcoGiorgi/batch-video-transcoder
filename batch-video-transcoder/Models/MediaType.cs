@@ -11,3 +11,4 @@ public enum MediaType
     /// <summary>A ripped DVD folder containing a VIDEO_TS directory.</summary>
     DVD_VIDEO_TS
 }
+

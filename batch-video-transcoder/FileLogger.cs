@@ -48,3 +48,4 @@ public sealed class FileLogger : IDisposable
         _writer.Dispose();
     }
 }
+

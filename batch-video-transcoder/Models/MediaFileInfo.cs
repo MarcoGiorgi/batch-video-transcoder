@@ -80,3 +80,4 @@ public sealed class MediaFileInfo
     /// <summary>Planner output containing the reason, output path, and command recommendation.</summary>
     public TranscodeDecision Decision { get; set; } = new();
 }
+

@@ -49,7 +49,7 @@ public sealed class TranscodePlanner
                 NeedsTranscode = false,
                 NeedsProcessing = true,
                 ProcessingStrategy = ProcessingStrategy.DvdRemux,
-                Reason = $"DVD VIDEO_TS rilevato, main title {media.MainTitleDetected}: remux lossless in MKV",
+                Reason = $"DVD VIDEO_TS detected, main title {media.MainTitleDetected}: remux lossless in MKV",
                 RecommendedCrf = 0,
                 OutputPath = dvdOutputPath,
                 FfmpegCommand = DvdRemuxPlanner.BuildDisplayCommand(media.FullPath, dvdOutputPath)
@@ -70,7 +70,7 @@ public sealed class TranscodePlanner
                 NeedsTranscode = false,
                 NeedsProcessing = false,
                 ProcessingStrategy = ProcessingStrategy.SkipCompatible,
-                Reason = $"Codec moderno/supportato: {media.VideoCodec}",
+                Reason = $"Modern/supported codec: {media.VideoCodec}",
                 RecommendedCrf = crf,
                 OutputPath = outputPath,
                 FfmpegCommand = command
@@ -83,12 +83,12 @@ public sealed class TranscodePlanner
         if (codecIsLegacy || tagIsLegacy)
         {
             var reason = codecIsLegacy
-                ? $"Codec video legacy/problematico: {media.VideoCodec}"
-                : $"Codec tag legacy/problematico: {media.VideoCodecTag}";
+                ? $"Legacy/problematic video codec: {media.VideoCodec}"
+                : $"Legacy/problematic codec tag: {media.VideoCodecTag}";
 
             if (media.IsMultipart)
             {
-                reason += "; multipart rilevato, le parti verranno combinate in un unico MKV";
+                reason += "; multipart detected, parts will be combined into a single MKV";
             }
 
             return new TranscodeDecision
@@ -108,7 +108,7 @@ public sealed class TranscodePlanner
             NeedsTranscode = false,
             NeedsProcessing = false,
             ProcessingStrategy = ProcessingStrategy.SkipCompatible,
-            Reason = $"Codec non incluso nelle regole legacy: {media.VideoCodec}",
+            Reason = $"Codec not included in legacy rules: {media.VideoCodec}",
             RecommendedCrf = crf,
             OutputPath = outputPath,
             FfmpegCommand = command
@@ -142,3 +142,4 @@ public sealed class TranscodePlanner
         return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 }
+

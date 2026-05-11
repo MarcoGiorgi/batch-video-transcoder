@@ -57,7 +57,7 @@ public sealed class FfmpegExecutor
                 await RemuxDvdAsync(media, cancellationToken);
                 break;
             case ProcessingStrategy.SkipCompatible:
-                ConsoleLogger.Info($"Skip compatibile: {media.FullPath}");
+                ConsoleLogger.Info($"Compatible skip: {media.FullPath}");
                 break;
         }
     }
@@ -67,7 +67,7 @@ public sealed class FfmpegExecutor
         var output = media.Decision.OutputPath;
         if (File.Exists(output))
         {
-            ConsoleLogger.Warn($"Resume: skip, output gia esistente: {output}");
+            ConsoleLogger.Warn($"Resume: skipping existing output: {output}");
             _log.Warn($"Skipping existing output: {output}");
             return;
         }
@@ -82,12 +82,12 @@ public sealed class FfmpegExecutor
             var result = await RunAsync(args, cancellationToken);
             if (result.ExitCode == 0)
             {
-                ConsoleLogger.Success($"Creato: {output}");
+                ConsoleLogger.Success($"Created: {output}");
                 _log.Info($"Transcode completed: {output}");
                 return;
             }
 
-            ConsoleLogger.Warn("ffmpeg fallito con sottotitoli copiati; ritento con -sn.");
+            ConsoleLogger.Warn("ffmpeg failed while copying subtitles; retrying with -sn.");
             _log.Warn($"ffmpeg subtitle-copy failure for {media.FullPath}: {result.Error}");
             DeletePartialOutput(output);
 
@@ -98,7 +98,7 @@ public sealed class FfmpegExecutor
                 throw new InvalidOperationException(retry.Error.Trim());
             }
 
-            ConsoleLogger.Success($"Creato senza sottotitoli: {output}");
+            ConsoleLogger.Success($"Created without subtitles: {output}");
             _log.Info($"Transcode completed without subtitles: {output}");
         }
         finally
@@ -112,7 +112,7 @@ public sealed class FfmpegExecutor
         var output = media.Decision.OutputPath;
         if (File.Exists(output))
         {
-            ConsoleLogger.Warn($"Resume: skip, output gia esistente: {output}");
+            ConsoleLogger.Warn($"Resume: skipping existing output: {output}");
             _log.Warn($"Skipping existing DVD remux output: {output}");
             return;
         }
@@ -142,12 +142,12 @@ public sealed class FfmpegExecutor
                 {
                     var suffix = i switch
                     {
-                        0 => "concat protocol, tracce compatibili",
-                        1 => "concat demuxer, tracce compatibili",
-                        2 => "senza sottotitoli",
-                        _ => "video principale e prima audio"
+                        0 => "concat protocol, compatible tracks",
+                        1 => "concat demuxer, compatible tracks",
+                        2 => "without subtitles",
+                        _ => "main video and first audio track"
                     };
-                    ConsoleLogger.Success($"DVD remux creato ({suffix}): {output}");
+                    ConsoleLogger.Success($"DVD remux created ({suffix}): {output}");
                     _log.Info($"DVD remux completed attempt {i + 1}: {output}");
                     return;
                 }
@@ -155,14 +155,14 @@ public sealed class FfmpegExecutor
                 _log.Warn($"DVD remux attempt {i + 1} failed for {media.FullPath}: {result.Error}");
                 ConsoleLogger.Warn(i switch
                 {
-                    0 => "DVD remux fallito con concat protocol; ritento concat demuxer.",
-                    1 => "DVD remux fallito con tutte le tracce; ritento senza sottotitoli.",
-                    2 => "DVD remux fallito senza sottotitoli; ritento solo video principale e prima audio.",
-                    _ => "DVD remux fallito."
+                    0 => "DVD remux failed with concat protocol; retrying with concat demuxer.",
+                    1 => "DVD remux failed with all compatible tracks; retrying without subtitles.",
+                    2 => "DVD remux failed without subtitles; retrying with main video and first audio track.",
+                    _ => "DVD remux failed."
                 });
             }
 
-            throw new InvalidOperationException($"DVD remux fallito per {media.FullPath}");
+            throw new InvalidOperationException($"DVD remux failed for {media.FullPath}");
         }
         finally
         {
@@ -303,6 +303,8 @@ public sealed class FfmpegExecutor
 
     private sealed record ProcessResult(int ExitCode, string Output, string Error);
 }
+
+
 
 
 

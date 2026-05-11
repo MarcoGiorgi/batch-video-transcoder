@@ -119,13 +119,13 @@ public sealed class CliOptions
             case "report":
                 if (string.IsNullOrWhiteSpace(RootDirectory) || !Directory.Exists(RootDirectory))
                 {
-                    error = "--root e obbligatorio e deve esistere.";
+                    error = "--root is required and must exist.";
                     return false;
                 }
 
                 if (string.IsNullOrWhiteSpace(OutputDirectory))
                 {
-                    error = "--out e obbligatorio in modalita report.";
+                    error = "--out is required in report mode.";
                     return false;
                 }
 
@@ -135,14 +135,14 @@ public sealed class CliOptions
             case "verify":
                 if (string.IsNullOrWhiteSpace(ReportPath) || !File.Exists(ReportPath))
                 {
-                    error = "--report e obbligatorio e deve esistere.";
+                    error = "--report is required and must exist.";
                     return false;
                 }
 
                 return true;
 
             default:
-                error = "Modalita obbligatoria: report, transcode o verify.";
+                error = "Mode is required: report, transcode, or verify.";
                 return false;
         }
     }
@@ -152,9 +152,10 @@ public sealed class CliOptions
     /// </summary>
     public static void PrintUsage()
     {
-        Console.WriteLine("Uso:");
+        Console.WriteLine("Usage:");
         Console.WriteLine("  batch-video-transcoder.exe report --root \"E:\\Media\\movies\" --out \"E:\\Media\\transcode-report\" [--preset medium]");
         Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1]");
         Console.WriteLine("  batch-video-transcoder.exe verify --report \"E:\\Media\\transcode-report\\report.json\"");
     }
 }
+

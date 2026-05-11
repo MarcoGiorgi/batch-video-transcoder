@@ -27,3 +27,4 @@ public static class DvdRemuxPlanner
         return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 }
+

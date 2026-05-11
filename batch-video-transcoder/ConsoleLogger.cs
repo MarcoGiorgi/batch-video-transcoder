@@ -36,3 +36,4 @@ public static class ConsoleLogger
         Console.WriteLine(message);
     }
 }
+

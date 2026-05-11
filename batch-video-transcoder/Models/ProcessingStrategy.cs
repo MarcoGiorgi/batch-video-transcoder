@@ -14,3 +14,4 @@ public enum ProcessingStrategy
     /// <summary>DVD streams should be copied losslessly into an MKV container.</summary>
     DvdRemux
 }
+

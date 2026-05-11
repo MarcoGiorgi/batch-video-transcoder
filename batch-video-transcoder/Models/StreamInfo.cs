@@ -32,3 +32,4 @@ public sealed class StreamInfo
     /// <summary>Stream bitrate when ffprobe exposes one.</summary>
     public string BitRate { get; set; } = string.Empty;
 }
+

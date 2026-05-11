@@ -145,3 +145,4 @@ public sealed class MediaScanner
         return directory is not null && dvdVideoTsFolders.Contains(directory);
     }
 }
+

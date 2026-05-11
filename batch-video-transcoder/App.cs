@@ -65,7 +65,7 @@ public static class App
         var ffprobe = new FfprobeService(options.FfprobePath, log);
         if (!await ffprobe.IsAvailableAsync())
         {
-            ConsoleLogger.Error($"ffprobe non trovato o non eseguibile: {options.FfprobePath}");
+            ConsoleLogger.Error($"ffprobe not found or not executable: {options.FfprobePath}");
             log.Error($"ffprobe unavailable: {options.FfprobePath}");
             return 2;
         }
@@ -79,7 +79,7 @@ public static class App
 
         // The scanner returns logical titles, not just files: a DVD folder and a multipart movie each become one row.
         var items = scanner.Scan(options.RootDirectory!, dvdDetector, dvdAnalyzer).ToList();
-        ConsoleLogger.Info($"Trovati {items.Count} titoli video/DVD in {options.RootDirectory}");
+        ConsoleLogger.Info($"Found {items.Count} video/DVD titles in {options.RootDirectory}");
         log.Info($"Scanning {items.Count} media items under {options.RootDirectory}");
 
         foreach (var item in items)
@@ -97,13 +97,13 @@ public static class App
 
                 if (media.Decision.NeedsProcessing)
                 {
-                    ConsoleLogger.Warn($"Da processare: {media.FileName} ({media.Decision.Reason})");
+                    ConsoleLogger.Warn($"Needs processing: {media.FileName} ({media.Decision.Reason})");
                 }
             }
             catch (Exception ex)
             {
                 // A bad file must not prevent the rest of a large Jellyfin library from being analyzed.
-                ConsoleLogger.Error($"Errore su {item.FullPath}: {ex.Message}");
+                ConsoleLogger.Error($"Error on {item.FullPath}: {ex.Message}");
                 log.Error($"Probe failed for {item.FullPath}: {ex}");
             }
         }
@@ -118,7 +118,7 @@ public static class App
         ConsoleLogger.Success($"Report CSV: {csvPath}");
         ConsoleLogger.Success($"Legacy transcode: {rows.Count(x => x.Decision.ProcessingStrategy == ProcessingStrategy.LegacyTranscode)}");
         ConsoleLogger.Success($"DVD remux: {rows.Count(x => x.Decision.ProcessingStrategy == ProcessingStrategy.DvdRemux)}");
-        ConsoleLogger.Success($"Skip compatibili: {rows.Count(x => x.Decision.ProcessingStrategy == ProcessingStrategy.SkipCompatible)}");
+        ConsoleLogger.Success($"Compatible skips: {rows.Count(x => x.Decision.ProcessingStrategy == ProcessingStrategy.SkipCompatible)}");
         return 0;
     }
 
@@ -134,13 +134,13 @@ public static class App
         var executor = new FfmpegExecutor(options.FfmpegPath, log);
         if (!await executor.IsAvailableAsync())
         {
-            ConsoleLogger.Error($"ffmpeg non trovato o non eseguibile: {options.FfmpegPath}");
+            ConsoleLogger.Error($"ffmpeg not found or not executable: {options.FfmpegPath}");
             log.Error($"ffmpeg unavailable: {options.FfmpegPath}");
             return 2;
         }
 
         var targets = rows.Where(x => x.Decision.NeedsProcessing).ToList();
-        ConsoleLogger.Info($"Elementi da processare: {targets.Count}, max job paralleli: {options.MaxConcurrentFfmpegJobs}");
+        ConsoleLogger.Info($"Items to process: {targets.Count}, max parallel jobs: {options.MaxConcurrentFfmpegJobs}");
 
         var startedAt = DateTimeOffset.Now;
         var completed = 0;
@@ -156,7 +156,7 @@ public static class App
             }
             catch (Exception ex)
             {
-                ConsoleLogger.Error($"Processing fallito per {row.FullPath}: {ex.Message}");
+                ConsoleLogger.Error($"Processing failed for {row.FullPath}: {ex.Message}");
                 log.Error($"Processing failed for {row.FullPath}: {ex}");
             }
             finally
@@ -183,7 +183,7 @@ public static class App
         var ffprobe = new FfprobeService(options.FfprobePath, log);
         if (!await ffprobe.IsAvailableAsync())
         {
-            ConsoleLogger.Error($"ffprobe non trovato o non eseguibile: {options.FfprobePath}");
+            ConsoleLogger.Error($"ffprobe not found or not executable: {options.FfprobePath}");
             log.Error($"ffprobe unavailable: {options.FfprobePath}");
             return 2;
         }
@@ -195,7 +195,7 @@ public static class App
             if (!File.Exists(row.Decision.OutputPath))
             {
                 failed++;
-                ConsoleLogger.Warn($"Output mancante: {row.Decision.OutputPath}");
+                ConsoleLogger.Warn($"Missing output: {row.Decision.OutputPath}");
                 continue;
             }
 
@@ -208,12 +208,12 @@ public static class App
             catch (Exception ex)
             {
                 failed++;
-                ConsoleLogger.Error($"Output non leggibile: {row.Decision.OutputPath} - {ex.Message}");
+                ConsoleLogger.Error($"Unreadable output: {row.Decision.OutputPath} - {ex.Message}");
                 log.Error($"Verify failed for {row.Decision.OutputPath}: {ex}");
             }
         }
 
-        ConsoleLogger.Info($"Verifica completata. OK={ok}, falliti={failed}");
+        ConsoleLogger.Info($"Verification completed. OK={ok}, failed={failed}");
         return failed == 0 ? 0 : 3;
     }
 
@@ -296,7 +296,7 @@ public static class App
         var eta = completed > 0
             ? TimeSpan.FromTicks((long)(elapsed.Ticks / (double)completed * (total - completed)))
             : TimeSpan.Zero;
-        ConsoleLogger.Info($"Progresso {completed}/{total} - elapsed {elapsed:hh\\:mm\\:ss} - ETA {eta:hh\\:mm\\:ss}");
+        ConsoleLogger.Info($"Progress {completed}/{total} - elapsed {elapsed:hh\\:mm\\:ss} - ETA {eta:hh\\:mm\\:ss}");
     }
 
     /// <summary>
@@ -306,7 +306,9 @@ public static class App
     /// <returns>The standard command-line validation error code.</returns>
     private static int UnknownMode(string mode)
     {
-        ConsoleLogger.Error($"Modalita non riconosciuta: {mode}");
+        ConsoleLogger.Error($"Unknown mode: {mode}");
         return 1;
     }
 }
+
+

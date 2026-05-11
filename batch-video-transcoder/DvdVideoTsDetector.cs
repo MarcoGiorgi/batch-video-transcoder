@@ -18,3 +18,4 @@ public sealed class DvdVideoTsDetector
             .ToList();
     }
 }
+
