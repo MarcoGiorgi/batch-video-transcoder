@@ -32,6 +32,12 @@ public sealed class CliOptions
     /// <summary>Maximum number of parallel ffmpeg jobs.</summary>
     public int MaxConcurrentFfmpegJobs { get; private set; } = 1;
 
+    /// <summary>Maximum number of pending items to process in the current run.</summary>
+    public int? Take { get; private set; }
+
+    /// <summary>True when cleanup mode should actually delete processed source files and DVD folders.</summary>
+    public bool DeleteSources { get; private set; }
+
     /// <summary>True when the user requested usage information.</summary>
     public bool ShowHelp { get; private set; }
 
@@ -64,6 +70,12 @@ public sealed class CliOptions
                 continue;
             }
 
+            if (key == "--delete-sources")
+            {
+                options.DeleteSources = true;
+                continue;
+            }
+
             if (i + 1 >= args.Length)
             {
                 break;
@@ -79,6 +91,12 @@ public sealed class CliOptions
                 case "--ffprobe": options.FfprobePath = value; break;
                 case "--ffmpeg": options.FfmpegPath = value; break;
                 case "--log": options.LogDirectory = value; break;
+                case "--take":
+                    if (int.TryParse(value, out var take))
+                    {
+                        options.Take = take;
+                    }
+                    break;
                 case "--max-jobs":
                     if (int.TryParse(value, out var maxJobs))
                     {
@@ -114,6 +132,12 @@ public sealed class CliOptions
     public bool IsValid(out string error)
     {
         error = string.Empty;
+        if (Take is <= 0)
+        {
+            error = "--take must be greater than zero.";
+            return false;
+        }
+
         switch (Mode)
         {
             case "report":
@@ -133,6 +157,7 @@ public sealed class CliOptions
 
             case "transcode":
             case "verify":
+            case "cleanup":
                 if (string.IsNullOrWhiteSpace(ReportPath) || !File.Exists(ReportPath))
                 {
                     error = "--report is required and must exist.";
@@ -142,7 +167,7 @@ public sealed class CliOptions
                 return true;
 
             default:
-                error = "Mode is required: report, transcode, or verify.";
+                error = "Mode is required: report, transcode, verify, or cleanup.";
                 return false;
         }
     }
@@ -154,8 +179,9 @@ public sealed class CliOptions
     {
         Console.WriteLine("Usage:");
         Console.WriteLine("  batch-video-transcoder.exe report --root \"E:\\Media\\movies\" --out \"E:\\Media\\transcode-report\" [--preset medium]");
-        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1]");
+        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1] [--take 10]");
         Console.WriteLine("  batch-video-transcoder.exe verify --report \"E:\\Media\\transcode-report\\report.json\"");
+        Console.WriteLine("  batch-video-transcoder.exe cleanup --report \"E:\\Media\\transcode-report\\report.json\" --delete-sources");
     }
 }
 

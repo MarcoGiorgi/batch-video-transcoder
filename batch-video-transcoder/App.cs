@@ -43,6 +43,7 @@ public static class App
                 "report" => await RunReportAsync(options, log),
                 "transcode" => await RunTranscodeAsync(options, log),
                 "verify" => await RunVerifyAsync(options, log),
+                "cleanup" => await RunCleanupAsync(options, log),
                 _ => UnknownMode(options.Mode)
             };
         }
@@ -139,12 +140,16 @@ public static class App
             return 2;
         }
 
-        var targets = rows.Where(x => x.Decision.NeedsProcessing).ToList();
-        ConsoleLogger.Info($"Items to process: {targets.Count}, max parallel jobs: {options.MaxConcurrentFfmpegJobs}");
+        var processable = rows.Where(x => x.Decision.NeedsProcessing).ToList();
+        var alreadyProcessed = processable.Count(x => x.Processed);
+        var pending = processable.Where(x => !x.Processed).ToList();
+        var targets = options.Take.HasValue ? pending.Take(options.Take.Value).ToList() : pending;
+        ConsoleLogger.Info($"Processable items: {processable.Count}; already processed: {alreadyProcessed}; remaining: {pending.Count}; selected this run: {targets.Count}; max parallel jobs: {options.MaxConcurrentFfmpegJobs}");
 
         var startedAt = DateTimeOffset.Now;
         var completed = 0;
         using var semaphore = new SemaphoreSlim(options.MaxConcurrentFfmpegJobs);
+        using var reportWriteLock = new SemaphoreSlim(1, 1);
 
         // Each ffmpeg job is independent; the semaphore keeps disk and CPU pressure under explicit user control.
         var tasks = targets.Select(async row =>
@@ -153,14 +158,29 @@ public static class App
             try
             {
                 await executor.ProcessAsync(row, options.Preset);
+                row.Processed = File.Exists(row.Decision.OutputPath);
+                row.ProcessedAt = row.Processed ? DateTimeOffset.UtcNow : row.ProcessedAt;
+                row.ProcessingError = row.Processed ? string.Empty : $"Expected output was not found: {row.Decision.OutputPath}";
             }
             catch (Exception ex)
             {
+                row.Processed = false;
+                row.ProcessingError = ex.Message;
                 ConsoleLogger.Error($"Processing failed for {row.FullPath}: {ex.Message}");
                 log.Error($"Processing failed for {row.FullPath}: {ex}");
             }
             finally
             {
+                await reportWriteLock.WaitAsync();
+                try
+                {
+                    await PersistReportAsync(options.ReportPath!, rows, log);
+                }
+                finally
+                {
+                    reportWriteLock.Release();
+                }
+
                 var done = Interlocked.Increment(ref completed);
                 LogProgress(done, targets.Count, startedAt);
                 semaphore.Release();
@@ -168,6 +188,77 @@ public static class App
         }).ToList();
 
         await Task.WhenAll(tasks);
+        return 0;
+    }
+
+    /// <summary>
+    /// Deletes original sources for rows already marked as processed, after confirming generated outputs exist and are readable.
+    /// </summary>
+    /// <param name="options">Validated command-line options for cleanup mode.</param>
+    /// <param name="log">The file logger used to persist cleanup operations.</param>
+    /// <returns>A process exit code for cleanup mode.</returns>
+    private static async Task<int> RunCleanupAsync(CliOptions options, FileLogger log)
+    {
+        var rows = await ReadReportAsync(options.ReportPath!);
+        var ffprobe = new FfprobeService(options.FfprobePath, log);
+        if (!await ffprobe.IsAvailableAsync())
+        {
+            ConsoleLogger.Error($"ffprobe not found or not executable: {options.FfprobePath}");
+            log.Error($"ffprobe unavailable: {options.FfprobePath}");
+            return 2;
+        }
+
+        var candidates = rows
+            .Where(x => x.Decision.NeedsProcessing)
+            .Where(x => x.Processed)
+            .Where(x => !x.SourceCleaned)
+            .ToList();
+
+        ConsoleLogger.Info($"Cleanup candidates: {candidates.Count}; delete enabled: {options.DeleteSources}");
+        if (!options.DeleteSources)
+        {
+            ConsoleLogger.Warn("Dry run only. Add --delete-sources to delete originals that have processed outputs.");
+        }
+
+        var cleaned = 0;
+        foreach (var row in candidates)
+        {
+            if (!File.Exists(row.Decision.OutputPath))
+            {
+                ConsoleLogger.Warn($"Skipping cleanup because output is missing: {row.Decision.OutputPath}");
+                continue;
+            }
+
+            try
+            {
+                await ffprobe.ProbeAsync(row.Decision.OutputPath);
+                var sourceTargets = GetCleanupTargets(row);
+                foreach (var target in sourceTargets)
+                {
+                    ConsoleLogger.Info($"{(options.DeleteSources ? "Deleting" : "Would delete")}: {target}");
+                    if (options.DeleteSources)
+                    {
+                        DeleteSourceTarget(target);
+                        log.Info($"Deleted source target: {target}");
+                    }
+                }
+
+                if (options.DeleteSources)
+                {
+                    row.SourceCleaned = true;
+                    row.SourceCleanedAt = DateTimeOffset.UtcNow;
+                    cleaned++;
+                    await PersistReportAsync(options.ReportPath!, rows, log);
+                }
+            }
+            catch (Exception ex)
+            {
+                ConsoleLogger.Error($"Cleanup skipped for {row.FullPath}: {ex.Message}");
+                log.Error($"Cleanup skipped for {row.FullPath}: {ex}");
+            }
+        }
+
+        ConsoleLogger.Success($"Cleanup completed. Cleaned sources: {cleaned}");
         return 0;
     }
 
@@ -227,6 +318,60 @@ public static class App
         await using var stream = File.OpenRead(reportPath);
         return await JsonSerializer.DeserializeAsync<List<MediaFileInfo>>(stream, ReportWriter.JsonOptions)
                ?? new List<MediaFileInfo>();
+    }
+
+    /// <summary>
+    /// Persists updated JSON and CSV reports after processing state changes.
+    /// </summary>
+    /// <param name="reportPath">Path to the JSON report being updated.</param>
+    /// <param name="rows">Current report rows.</param>
+    /// <param name="log">Logger used by the report writer.</param>
+    /// <returns>A task representing the write operation.</returns>
+    private static async Task PersistReportAsync(string reportPath, IReadOnlyCollection<MediaFileInfo> rows, FileLogger log)
+    {
+        var writer = new ReportWriter(log);
+        await writer.WriteJsonAsync(reportPath, rows);
+        await writer.WriteCsvAsync(Path.ChangeExtension(reportPath, ".csv"), rows);
+    }
+
+    /// <summary>
+    /// Calculates original file or DVD folder targets that can be deleted after successful processing.
+    /// </summary>
+    /// <param name="row">Processed report row.</param>
+    /// <returns>Source paths eligible for cleanup.</returns>
+    private static IReadOnlyList<string> GetCleanupTargets(MediaFileInfo row)
+    {
+        if (row.MediaType == MediaType.DVD_VIDEO_TS)
+        {
+            var videoTsDirectory = Path.GetDirectoryName(row.FullPath);
+            return !string.IsNullOrWhiteSpace(videoTsDirectory) && Directory.Exists(videoTsDirectory)
+                ? new[] { videoTsDirectory }
+                : Array.Empty<string>();
+        }
+
+        return row.InputFiles
+            .Where(path => !string.Equals(path, row.Decision.OutputPath, StringComparison.OrdinalIgnoreCase))
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Deletes a source file or source directory selected by cleanup mode.
+    /// </summary>
+    /// <param name="target">File or directory to delete.</param>
+    private static void DeleteSourceTarget(string target)
+    {
+        if (Directory.Exists(target))
+        {
+            Directory.Delete(target, recursive: true);
+            return;
+        }
+
+        if (File.Exists(target))
+        {
+            File.Delete(target);
+        }
     }
 
     /// <summary>

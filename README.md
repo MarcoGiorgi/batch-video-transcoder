@@ -11,11 +11,12 @@ It supports three strategies:
 ## Project Structure
 
 ```text
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\batch-video-transcoder.csproj
+batch-video-transcoder.sln
+batch-video-transcoder/
+  batch-video-transcoder.csproj
 ```
 
-The produced assembly is named `batch-video-transcoder.exe`.
+The produced assembly is named `batch-video-transcoder.exe` on Windows and `batch-video-transcoder` on Linux/macOS.
 
 ## Requirements
 
@@ -31,43 +32,66 @@ sudo apt install ffmpeg
 
 The `ffmpeg` package also includes `ffprobe`.
 
-On Windows, install ffmpeg and add its `bin` folder to `PATH`, or pass explicit binary paths:
-
-```powershell
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "E:\Projects\Brains\VideoUtilities\BVT\VideoSample" --out "E:\Projects\Brains\VideoUtilities\BVT\transcode-report" --ffmpeg "C:\ffmpeg\bin\ffmpeg.exe" --ffprobe "C:\ffmpeg\bin\ffprobe.exe"
-```
-
 ## Build
 
-```powershell
-dotnet build E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder.sln
-```
-
-## CLI Examples
-
-Report only:
+From the repository root:
 
 ```bash
-dotnet run --project batch-video-transcoder -- report --root "/mnt/media/movies" --out "/mnt/media/transcode-report"
+dotnet build batch-video-transcoder.sln
 ```
 
-Convert/remux only items marked with `NeedsProcessing=true`:
+## Recommended Workflow
+
+Generate the report first:
 
 ```bash
-dotnet run --project batch-video-transcoder -- transcode --report "/mnt/media/transcode-report/report.json" --max-jobs 1
+dotnet run --project batch-video-transcoder -- report \
+  --root "/path/to/movies" \
+  --out "/path/to/transcode-report"
 ```
 
-Verify outputs:
+Process a small chunk of pending items:
 
 ```bash
-dotnet run --project batch-video-transcoder -- verify --report "/mnt/media/transcode-report/report.json"
+dotnet run --project batch-video-transcoder -- transcode \
+  --report "/path/to/transcode-report/report.json" \
+  --take 10 \
+  --max-jobs 1
 ```
 
-Run the compiled executable against local Windows samples:
+Run the same command again to process the next chunk. BVT marks completed rows as `Processed=true` in the report and skips them on later runs.
 
-```powershell
-E:\Projects\Brains\VideoUtilities\BVT\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "E:\Projects\Brains\VideoUtilities\BVT\VideoSample" --out "E:\Projects\Brains\VideoUtilities\BVT\transcode-report"
+Process all remaining pending items:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode \
+  --report "/path/to/transcode-report/report.json" \
+  --max-jobs 1
 ```
+
+Verify generated outputs:
+
+```bash
+dotnet run --project batch-video-transcoder -- verify \
+  --report "/path/to/transcode-report/report.json"
+```
+
+Preview source cleanup without deleting anything:
+
+```bash
+dotnet run --project batch-video-transcoder -- cleanup \
+  --report "/path/to/transcode-report/report.json"
+```
+
+Delete original sources that are already processed and have readable outputs:
+
+```bash
+dotnet run --project batch-video-transcoder -- cleanup \
+  --report "/path/to/transcode-report/report.json" \
+  --delete-sources
+```
+
+For regular files, cleanup deletes the original input files. For DVD rows, cleanup deletes the processed `VIDEO_TS` folder. Generated `.converted.mkv` and `.dvdremux.mkv` files are never deleted by cleanup.
 
 ## Jellyfin Layout
 
@@ -107,19 +131,6 @@ Movie (1995)/Movie (1995).dvdremux.mkv
 
 DVD remux does not transcode: it only changes the container to MKV. To improve compatibility and seekability, BVT uses the main-title VOB chain through the `concat:` protocol, asks ffmpeg to regenerate problematic timestamps, and drops `dvd_nav_packet` data streams that are invalid in Matroska.
 
-Conceptual command:
-
-```bash
-ffmpeg -hide_banner -y -fflags +genpts+igndts -i "concat:VTS_01_1.VOB|VTS_01_2.VOB" -map 0:v:0 -map 0:a -map 0:s? -dn -c copy "Movie (1995).dvdremux.mkv"
-```
-
-Automatic fallbacks:
-
-- attempt 1: concat protocol, video + audio + optional subtitles, no data streams
-- attempt 2: concat demuxer, video + audio + optional subtitles, no data streams
-- attempt 3: video + audio, no subtitles
-- attempt 4: main video + first audio track
-
 ## Legacy Transcode
 
 Legacy/problematic codecs:
@@ -129,12 +140,6 @@ mpeg4, msmpeg4v3, mpeg2video, wmv1, wmv2, wmv3, flv1, rv40, indeo, cinepak, h263
 ```
 
 Tags `DX50`, `DIVX`, and `XVID` are also treated as legacy.
-
-Command:
-
-```bash
-ffmpeg -hide_banner -y -i "input.avi" -map 0 -c:v libx264 -preset medium -crf 18 -c:a copy -c:s copy "input.converted.mkv"
-```
 
 Quality rules:
 
@@ -147,38 +152,29 @@ Quality rules:
 
 If subtitle copying fails, BVT retries with `-sn`.
 
-## Report
+## Report State
 
-The CSV/JSON report includes these columns, among others:
+The report is also the resume database. Processing updates these fields:
 
 ```text
-MediaType, ProcessingStrategy, FullPath, InputFiles, IsMultipart, SizeGB,
-Container, VideoCodec, VideoCodecTag, Width, Height, FrameRate, Duration,
-AudioCodecs, SubtitleCodecs, MainTitleDetected, EstimatedDuration,
-EstimatedMainMovieSizeGB, NeedsTranscode, NeedsProcessing, RecommendedCrf,
-OutputPath, FfmpegCommand
+Processed, ProcessedAt, ProcessingError, SourceCleaned, SourceCleanedAt
 ```
 
-Example strategy:
+At the start of `transcode`, BVT prints:
 
-```json
-{
-  "MediaType": "DVD_VIDEO_TS",
-  "ProcessingStrategy": "DvdRemux",
-  "MainTitleDetected": "VTS_01",
-  "Decision": {
-    "NeedsTranscode": false,
-    "NeedsProcessing": true,
-    "ProcessingStrategy": "DvdRemux"
-  }
-}
+```text
+Processable items: <total>; already processed: <done>; remaining: <pending>; selected this run: <chunk>
 ```
+
+This makes long runs safer: you can process 10, 20, or 50 items at a time and resume later without editing the report manually.
 
 ## Errors, Resume, and Parallelism
 
 - Errors on a single file do not stop the full scan.
 - Logs are written to the console and to files under `logs`.
-- In `transcode` mode, existing outputs are skipped; this is the resume capability.
+- In `transcode` mode, rows with `Processed=true` are skipped.
+- If an output already exists and is accepted, the row is marked as processed.
+- `--take N` limits the current run to the first N pending rows.
 - `--max-jobs N` controls how many ffmpeg jobs may run in parallel.
 - Each completed job prints progress, elapsed time, and estimated time remaining.
 

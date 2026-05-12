@@ -87,7 +87,12 @@ public sealed class ReportWriter
                 row.Decision.Reason,
                 row.Decision.RecommendedCrf.ToString(CultureInfo.InvariantCulture),
                 row.Decision.OutputPath,
-                row.Decision.FfmpegCommand
+                row.Decision.FfmpegCommand,
+                row.Processed.ToString(),
+                row.ProcessedAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
+                row.ProcessingError,
+                row.SourceCleaned.ToString(),
+                row.SourceCleanedAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty
             };
 
             builder.AppendLine(string.Join(",", values.Select(Escape)));
@@ -131,7 +136,12 @@ public sealed class ReportWriter
         "Reason",
         "RecommendedCrf",
         "OutputPath",
-        "FfmpegCommand"
+        "FfmpegCommand",
+        "Processed",
+        "ProcessedAt",
+        "ProcessingError",
+        "SourceCleaned",
+        "SourceCleanedAt"
     };
 }
 

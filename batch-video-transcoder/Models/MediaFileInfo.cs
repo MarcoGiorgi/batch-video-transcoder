@@ -79,5 +79,20 @@ public sealed class MediaFileInfo
 
     /// <summary>Planner output containing the reason, output path, and command recommendation.</summary>
     public TranscodeDecision Decision { get; set; } = new();
+
+    /// <summary>True when the processing command completed successfully or an existing output was accepted.</summary>
+    public bool Processed { get; set; }
+
+    /// <summary>UTC timestamp recorded when the item was marked as processed.</summary>
+    public DateTimeOffset? ProcessedAt { get; set; }
+
+    /// <summary>Last processing error recorded for this item, if any.</summary>
+    public string ProcessingError { get; set; } = string.Empty;
+
+    /// <summary>True when original source files or DVD folders have been deleted after successful processing.</summary>
+    public bool SourceCleaned { get; set; }
+
+    /// <summary>UTC timestamp recorded when source cleanup completed.</summary>
+    public DateTimeOffset? SourceCleanedAt { get; set; }
 }
 
