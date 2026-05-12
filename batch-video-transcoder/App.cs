@@ -233,7 +233,7 @@ public static class App
             try
             {
                 await ffprobe.ProbeAsync(row.Decision.OutputPath);
-                if (!FinalizeOutputName(row, options.DeleteSources, log))
+                if (!CanFinalizeOutputName(row, log))
                 {
                     continue;
                 }
@@ -248,6 +248,8 @@ public static class App
                         log.Info($"Deleted source target: {target}");
                     }
                 }
+
+                FinalizeOutputName(row, options.DeleteSources, log);
 
                 if (options.DeleteSources)
                 {
@@ -378,13 +380,12 @@ public static class App
     }
 
     /// <summary>
-    /// Renames generated outputs to the Jellyfin movie folder name before destructive cleanup.
+    /// Checks whether the processed output can later be renamed to the final Jellyfin movie name.
     /// </summary>
     /// <param name="row">Processed report row whose output should be finalized.</param>
-    /// <param name="applyChanges">True to rename the file; false to print the dry-run action only.</param>
-    /// <param name="log">Logger used to record rename operations.</param>
+    /// <param name="log">Logger used to record conflicts.</param>
     /// <returns>True when cleanup can continue; false when a conflicting final file already exists.</returns>
-    private static bool FinalizeOutputName(MediaFileInfo row, bool applyChanges, FileLogger log)
+    private static bool CanFinalizeOutputName(MediaFileInfo row, FileLogger log)
     {
         var currentOutput = row.Decision.OutputPath;
         var finalOutput = GetFinalOutputPath(row);
@@ -393,11 +394,29 @@ public static class App
             return true;
         }
 
-        if (File.Exists(finalOutput))
+        if (!File.Exists(finalOutput))
         {
-            ConsoleLogger.Warn($"Skipping cleanup because final Jellyfin output already exists: {finalOutput}");
-            log.Warn($"Final output already exists, cleanup skipped: {finalOutput}");
-            return false;
+            return true;
+        }
+
+        ConsoleLogger.Warn($"Skipping cleanup because final Jellyfin output already exists: {finalOutput}");
+        log.Warn($"Final output already exists, cleanup skipped: {finalOutput}");
+        return false;
+    }
+
+    /// <summary>
+    /// Renames generated outputs to the Jellyfin movie folder name after the old source has been removed.
+    /// </summary>
+    /// <param name="row">Processed report row whose output should be finalized.</param>
+    /// <param name="applyChanges">True to rename the file; false to print the dry-run action only.</param>
+    /// <param name="log">Logger used to record rename operations.</param>
+    private static void FinalizeOutputName(MediaFileInfo row, bool applyChanges, FileLogger log)
+    {
+        var currentOutput = row.Decision.OutputPath;
+        var finalOutput = GetFinalOutputPath(row);
+        if (string.Equals(currentOutput, finalOutput, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
         }
 
         ConsoleLogger.Info($"{(applyChanges ? "Renaming" : "Would rename")}: {currentOutput} -> {finalOutput}");
@@ -407,8 +426,6 @@ public static class App
             row.Decision.OutputPath = finalOutput;
             log.Info($"Renamed output for Jellyfin: {currentOutput} -> {finalOutput}");
         }
-
-        return true;
     }
 
     /// <summary>
