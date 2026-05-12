@@ -82,11 +82,59 @@ Process only DVD `VIDEO_TS` rows from an existing report:
 dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --dvd-only --max-jobs 1
 ```
 
-Verify outputs:
+Process a small chunk of pending items:
 
 ```bash
-dotnet run --project batch-video-transcoder -- verify --report "/path/to/transcode-report/report.json"
+dotnet run --project batch-video-transcoder -- transcode \
+  --report "/path/to/transcode-report/report.json" \
+  --take 10 \
+  --max-jobs 1 \
+  --rate-control source-bitrate \
+  --size-margin-percent 3
 ```
+
+Run the same command again to process the next chunk. BVT marks completed rows as `Processed=true` in the report and skips them on later runs.
+
+Process all remaining pending items:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode \
+  --report "/path/to/transcode-report/report.json" \
+  --max-jobs 1
+```
+
+Verify generated outputs:
+
+```bash
+dotnet run --project batch-video-transcoder -- verify \
+  --report "/path/to/transcode-report/report.json"
+```
+
+Preview source cleanup without deleting anything:
+
+```bash
+dotnet run --project batch-video-transcoder -- cleanup \
+  --report "/path/to/transcode-report/report.json"
+```
+
+Delete original sources that are already processed and have readable outputs:
+
+```bash
+dotnet run --project batch-video-transcoder -- cleanup \
+  --report "/path/to/transcode-report/report.json" \
+  --delete-sources
+```
+
+For regular files, cleanup deletes the original input files. For DVD rows, cleanup deletes the processed `VIDEO_TS` folder. Generated `.converted.mkv` and `.dvdremux.mkv` files are never deleted by cleanup; they are renamed to the final Jellyfin name when cleanup is applied.
+
+Before deleting any source, cleanup verifies the generated MKV with `ffprobe` and renames it to the Jellyfin folder name:
+
+```text
+Title (1995)/Title (1995).converted.mkv  ->  Title (1995)/Title (1995).mkv
+Title (1995)/Title (1995).dvdremux.mkv   ->  Title (1995)/Title (1995).mkv
+```
+
+If the final Jellyfin output already exists, cleanup skips that row and leaves sources untouched.
 
 ## Jellyfin Layout
 
@@ -126,19 +174,6 @@ Movie (1995)/Movie (1995).dvdremux.mkv
 
 DVD remux does not transcode: it only changes the container to MKV. To improve compatibility and seekability, BVT uses the main-title VOB chain through the `concat:` protocol, asks ffmpeg to regenerate problematic timestamps, and drops `dvd_nav_packet` data streams that are invalid in Matroska.
 
-Conceptual command:
-
-```bash
-ffmpeg -hide_banner -y -fflags +genpts+igndts -i "concat:VTS_01_1.VOB|VTS_01_2.VOB" -map 0:v:0 -map 0:a -map 0:s? -dn -c copy "Movie (1995).dvdremux.mkv"
-```
-
-Automatic fallbacks:
-
-- attempt 1: concat protocol, video + audio + optional subtitles, no data streams
-- attempt 2: concat demuxer, video + audio + optional subtitles, no data streams
-- attempt 3: video + audio, no subtitles
-- attempt 4: main video + first audio track
-
 ## Legacy Transcode
 
 Legacy/problematic codecs:
@@ -148,12 +183,6 @@ mpeg4, msmpeg4v3, mpeg2video, wmv1, wmv2, wmv3, flv1, rv40, indeo, cinepak, h263
 ```
 
 Tags `DX50`, `DIVX`, and `XVID` are also treated as legacy.
-
-Command:
-
-```bash
-ffmpeg -hide_banner -y -i "input.avi" -map 0 -c:v libx264 -preset medium -crf 18 -c:a copy -c:s copy "input.converted.mkv"
-```
 
 Quality rules:
 
@@ -166,38 +195,43 @@ Quality rules:
 
 If subtitle copying fails, BVT retries with `-sn`.
 
-## Report
+By default, legacy transcode uses `--rate-control source-bitrate`. BVT reads the original video bitrate, adds `--size-margin-percent` percent, and asks x264 to target that bitrate. This keeps output sizes closer to the original file than CRF-only encoding.
 
-The CSV/JSON report includes these columns, among others:
+You can still use the original CRF behavior:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode \
+  --report "/path/to/transcode-report/report.json" \
+  --rate-control crf
+```
+
+CRF is quality-targeted, not size-targeted. It can create files that are larger or smaller than the source depending on noise, grain, interlacing, codec efficiency, and the original encode quality. A smaller H.264 file does not automatically mean obvious visible quality loss, but every lossy transcode has some generation loss. Source-bitrate mode is the safer choice when predictable disk usage matters.
+
+## Report State
+
+The report is also the resume database. Processing updates these fields:
 
 ```text
-MediaType, ProcessingStrategy, FullPath, InputFiles, IsMultipart, SizeGB,
-Container, VideoCodec, VideoCodecTag, Width, Height, FrameRate, Duration,
-AudioCodecs, SubtitleCodecs, MainTitleDetected, EstimatedDuration,
-EstimatedMainMovieSizeGB, NeedsTranscode, NeedsProcessing, RecommendedCrf,
-OutputPath, FfmpegCommand
+Processed, ProcessedAt, ProcessingError, SourceCleaned, SourceCleanedAt
 ```
 
-Example strategy:
+Reports also include `RecommendedVideoBitrateKbps` for source-bitrate transcodes.
 
-```json
-{
-  "MediaType": "DVD_VIDEO_TS",
-  "ProcessingStrategy": "DvdRemux",
-  "MainTitleDetected": "VTS_01",
-  "Decision": {
-    "NeedsTranscode": false,
-    "NeedsProcessing": true,
-    "ProcessingStrategy": "DvdRemux"
-  }
-}
+At the start of `transcode`, BVT prints:
+
+```text
+Processable items: <total>; already processed: <done>; remaining: <pending>; selected this run: <chunk>
 ```
+
+This makes long runs safer: you can process 10, 20, or 50 items at a time and resume later without editing the report manually.
 
 ## Errors, Resume, and Parallelism
 
 - Errors on a single file do not stop the full scan.
 - Logs are written to the console and to files under `logs`.
-- In `transcode` mode, existing outputs are skipped; this is the resume capability.
+- In `transcode` mode, rows with `Processed=true` are skipped.
+- If an output already exists and is accepted, the row is marked as processed.
+- `--take N` limits the current run to the first N pending rows.
 - `--dvd-only` restricts `transcode` mode to DVD `VIDEO_TS` rows only.
 - `--max-jobs N` controls how many ffmpeg jobs may run in parallel.
 - Each completed job prints progress, elapsed time, and estimated time remaining.

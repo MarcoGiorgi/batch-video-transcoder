@@ -20,6 +20,9 @@ public sealed class TranscodeDecision
     /// <summary>Recommended libx264 CRF for legacy transcodes; 0 for remux-only rows.</summary>
     public int RecommendedCrf { get; set; }
 
+    /// <summary>Recommended target video bitrate in Kbps for source-bitrate transcodes; 0 when CRF is used.</summary>
+    public int RecommendedVideoBitrateKbps { get; set; }
+
     /// <summary>Destination path for the generated MKV output.</summary>
     public string OutputPath { get; set; } = string.Empty;
 

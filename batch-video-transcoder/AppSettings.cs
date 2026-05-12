@@ -20,6 +20,12 @@ public sealed class AppSettings
     /// <summary>Maximum number of ffmpeg jobs allowed to run at the same time.</summary>
     public int MaxConcurrentFfmpegJobs { get; set; } = 1;
 
+    /// <summary>Default legacy transcode rate control mode: source-bitrate or crf.</summary>
+    public string RateControl { get; set; } = "source-bitrate";
+
+    /// <summary>Percentage added to the source video bitrate when rate control is source-bitrate.</summary>
+    public int SizeMarginPercent { get; set; } = 3;
+
     /// <summary>
     /// Loads settings from disk, falling back to defaults when the file is absent or malformed.
     /// </summary>
