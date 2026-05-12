@@ -35,6 +35,12 @@ public sealed class CliOptions
     /// <summary>Maximum number of pending items to process in the current run.</summary>
     public int? Take { get; private set; }
 
+    /// <summary>Rate control mode for legacy video transcodes: source-bitrate or crf.</summary>
+    public string RateControl { get; private set; } = string.Empty;
+
+    /// <summary>Extra percentage added to source video bitrate in source-bitrate mode.</summary>
+    public int SizeMarginPercent { get; private set; } = -1;
+
     /// <summary>True when cleanup mode should actually delete processed source files and DVD folders.</summary>
     public bool DeleteSources { get; private set; }
 
@@ -88,9 +94,16 @@ public sealed class CliOptions
                 case "--out": options.OutputDirectory = value; break;
                 case "--report": options.ReportPath = value; break;
                 case "--preset": options.Preset = value; break;
+                case "--rate-control": options.RateControl = value; break;
                 case "--ffprobe": options.FfprobePath = value; break;
                 case "--ffmpeg": options.FfmpegPath = value; break;
                 case "--log": options.LogDirectory = value; break;
+                case "--size-margin-percent":
+                    if (int.TryParse(value, out var margin))
+                    {
+                        options.SizeMarginPercent = margin;
+                    }
+                    break;
                 case "--take":
                     if (int.TryParse(value, out var take))
                     {
@@ -122,6 +135,10 @@ public sealed class CliOptions
         LogDirectory = string.IsNullOrWhiteSpace(settings.LogDirectory) ? LogDirectory : settings.LogDirectory;
         MaxConcurrentFfmpegJobs = MaxConcurrentFfmpegJobs > 1 ? MaxConcurrentFfmpegJobs : settings.MaxConcurrentFfmpegJobs;
         MaxConcurrentFfmpegJobs = Math.Max(1, MaxConcurrentFfmpegJobs);
+        RateControl = string.IsNullOrWhiteSpace(RateControl) ? settings.RateControl : RateControl;
+        RateControl = string.IsNullOrWhiteSpace(RateControl) ? "source-bitrate" : RateControl.ToLowerInvariant();
+        SizeMarginPercent = SizeMarginPercent >= 0 ? SizeMarginPercent : settings.SizeMarginPercent;
+        SizeMarginPercent = Math.Clamp(SizeMarginPercent, 0, 50);
     }
 
     /// <summary>
@@ -135,6 +152,12 @@ public sealed class CliOptions
         if (Take is <= 0)
         {
             error = "--take must be greater than zero.";
+            return false;
+        }
+
+        if (RateControl is not "source-bitrate" and not "crf")
+        {
+            error = "--rate-control must be source-bitrate or crf.";
             return false;
         }
 
@@ -178,10 +201,10 @@ public sealed class CliOptions
     public static void PrintUsage()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine("  batch-video-transcoder.exe report --root \"E:\\Media\\movies\" --out \"E:\\Media\\transcode-report\" [--preset medium]");
-        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"E:\\Media\\transcode-report\\report.json\" [--preset medium] [--max-jobs 1] [--take 10]");
-        Console.WriteLine("  batch-video-transcoder.exe verify --report \"E:\\Media\\transcode-report\\report.json\"");
-        Console.WriteLine("  batch-video-transcoder.exe cleanup --report \"E:\\Media\\transcode-report\\report.json\" --delete-sources");
+        Console.WriteLine("  batch-video-transcoder.exe report --root \"/path/to/movies\" --out \"/path/to/transcode-report\" [--preset medium]");
+        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"/path/to/transcode-report/report.json\" [--preset medium] [--max-jobs 1] [--take 10] [--rate-control source-bitrate] [--size-margin-percent 3]");
+        Console.WriteLine("  batch-video-transcoder.exe verify --report \"/path/to/transcode-report/report.json\"");
+        Console.WriteLine("  batch-video-transcoder.exe cleanup --report \"/path/to/transcode-report/report.json\" --delete-sources");
     }
 }
 

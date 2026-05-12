@@ -56,7 +56,9 @@ Process a small chunk of pending items:
 dotnet run --project batch-video-transcoder -- transcode \
   --report "/path/to/transcode-report/report.json" \
   --take 10 \
-  --max-jobs 1
+  --max-jobs 1 \
+  --rate-control source-bitrate \
+  --size-margin-percent 3
 ```
 
 Run the same command again to process the next chunk. BVT marks completed rows as `Processed=true` in the report and skips them on later runs.
@@ -91,7 +93,16 @@ dotnet run --project batch-video-transcoder -- cleanup \
   --delete-sources
 ```
 
-For regular files, cleanup deletes the original input files. For DVD rows, cleanup deletes the processed `VIDEO_TS` folder. Generated `.converted.mkv` and `.dvdremux.mkv` files are never deleted by cleanup.
+For regular files, cleanup deletes the original input files. For DVD rows, cleanup deletes the processed `VIDEO_TS` folder. Generated `.converted.mkv` and `.dvdremux.mkv` files are never deleted by cleanup; they are renamed to the final Jellyfin name when cleanup is applied.
+
+Before deleting any source, cleanup verifies the generated MKV with `ffprobe` and renames it to the Jellyfin folder name:
+
+```text
+Title (1995)/Title (1995).converted.mkv  ->  Title (1995)/Title (1995).mkv
+Title (1995)/Title (1995).dvdremux.mkv   ->  Title (1995)/Title (1995).mkv
+```
+
+If the final Jellyfin output already exists, cleanup skips that row and leaves sources untouched.
 
 ## Jellyfin Layout
 
@@ -152,6 +163,18 @@ Quality rules:
 
 If subtitle copying fails, BVT retries with `-sn`.
 
+By default, legacy transcode uses `--rate-control source-bitrate`. BVT reads the original video bitrate, adds `--size-margin-percent` percent, and asks x264 to target that bitrate. This keeps output sizes closer to the original file than CRF-only encoding.
+
+You can still use the original CRF behavior:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode \
+  --report "/path/to/transcode-report/report.json" \
+  --rate-control crf
+```
+
+CRF is quality-targeted, not size-targeted. It can create files that are larger or smaller than the source depending on noise, grain, interlacing, codec efficiency, and the original encode quality. A smaller H.264 file does not automatically mean obvious visible quality loss, but every lossy transcode has some generation loss. Source-bitrate mode is the safer choice when predictable disk usage matters.
+
 ## Report State
 
 The report is also the resume database. Processing updates these fields:
@@ -159,6 +182,8 @@ The report is also the resume database. Processing updates these fields:
 ```text
 Processed, ProcessedAt, ProcessingError, SourceCleaned, SourceCleanedAt
 ```
+
+Reports also include `RecommendedVideoBitrateKbps` for source-bitrate transcodes.
 
 At the start of `transcode`, BVT prints:
 

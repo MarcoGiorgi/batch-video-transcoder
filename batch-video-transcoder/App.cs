@@ -75,7 +75,7 @@ public static class App
         var scanner = new MediaScanner();
         var dvdDetector = new DvdVideoTsDetector();
         var dvdAnalyzer = new DvdTitleAnalyzer();
-        var planner = new TranscodePlanner(options.Preset);
+        var planner = new TranscodePlanner(options.Preset, options.RateControl, options.SizeMarginPercent);
         var rows = new List<MediaFileInfo>();
 
         // The scanner returns logical titles, not just files: a DVD folder and a multipart movie each become one row.
@@ -140,6 +140,7 @@ public static class App
             return 2;
         }
 
+        RefreshPendingTranscodeDecisions(rows, options);
         var processable = rows.Where(x => x.Decision.NeedsProcessing).ToList();
         var alreadyProcessed = processable.Count(x => x.Processed);
         var pending = processable.Where(x => !x.Processed).ToList();
@@ -232,6 +233,11 @@ public static class App
             try
             {
                 await ffprobe.ProbeAsync(row.Decision.OutputPath);
+                if (!FinalizeOutputName(row, options.DeleteSources, log))
+                {
+                    continue;
+                }
+
                 var sourceTargets = GetCleanupTargets(row);
                 foreach (var target in sourceTargets)
                 {
@@ -335,6 +341,21 @@ public static class App
     }
 
     /// <summary>
+    /// Rebuilds pending legacy decisions so older reports can use the latest rate-control settings.
+    /// </summary>
+    /// <param name="rows">Report rows loaded from disk.</param>
+    /// <param name="options">Current command-line options.</param>
+    private static void RefreshPendingTranscodeDecisions(IEnumerable<MediaFileInfo> rows, CliOptions options)
+    {
+        var planner = new TranscodePlanner(options.Preset, options.RateControl, options.SizeMarginPercent);
+        foreach (var row in rows.Where(x => !x.Processed && x.Decision.ProcessingStrategy == ProcessingStrategy.LegacyTranscode))
+        {
+            row.Decision = planner.Decide(row);
+            row.ProcessingStrategy = row.Decision.ProcessingStrategy;
+        }
+    }
+
+    /// <summary>
     /// Calculates original file or DVD folder targets that can be deleted after successful processing.
     /// </summary>
     /// <param name="row">Processed report row.</param>
@@ -354,6 +375,53 @@ public static class App
             .Where(File.Exists)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// Renames generated outputs to the Jellyfin movie folder name before destructive cleanup.
+    /// </summary>
+    /// <param name="row">Processed report row whose output should be finalized.</param>
+    /// <param name="applyChanges">True to rename the file; false to print the dry-run action only.</param>
+    /// <param name="log">Logger used to record rename operations.</param>
+    /// <returns>True when cleanup can continue; false when a conflicting final file already exists.</returns>
+    private static bool FinalizeOutputName(MediaFileInfo row, bool applyChanges, FileLogger log)
+    {
+        var currentOutput = row.Decision.OutputPath;
+        var finalOutput = GetFinalOutputPath(row);
+        if (string.Equals(currentOutput, finalOutput, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (File.Exists(finalOutput))
+        {
+            ConsoleLogger.Warn($"Skipping cleanup because final Jellyfin output already exists: {finalOutput}");
+            log.Warn($"Final output already exists, cleanup skipped: {finalOutput}");
+            return false;
+        }
+
+        ConsoleLogger.Info($"{(applyChanges ? "Renaming" : "Would rename")}: {currentOutput} -> {finalOutput}");
+        if (applyChanges)
+        {
+            File.Move(currentOutput, finalOutput);
+            row.Decision.OutputPath = finalOutput;
+            log.Info($"Renamed output for Jellyfin: {currentOutput} -> {finalOutput}");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the final Jellyfin-compatible MKV path for a processed movie folder.
+    /// </summary>
+    /// <param name="row">Processed report row.</param>
+    /// <returns>Final MKV path named after the Jellyfin movie folder.</returns>
+    private static string GetFinalOutputPath(MediaFileInfo row)
+    {
+        var baseName = !string.IsNullOrWhiteSpace(row.MovieFolderName)
+            ? row.MovieFolderName
+            : Path.GetFileNameWithoutExtension(row.FileName);
+        return Path.Combine(row.Directory, $"{baseName}.mkv");
     }
 
     /// <summary>

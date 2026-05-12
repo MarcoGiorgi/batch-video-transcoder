@@ -183,7 +183,22 @@ public sealed class FfmpegExecutor
             args.AddRange(["-i", media.FullPath]);
         }
 
-        args.AddRange(["-map", "0", "-c:v", "libx264", "-preset", preset, "-crf", crf.ToString(), "-c:a", "copy"]);
+        args.AddRange(["-map", "0", "-c:v", "libx264", "-preset", preset]);
+        if (media.Decision.RecommendedVideoBitrateKbps > 0)
+        {
+            var target = media.Decision.RecommendedVideoBitrateKbps;
+            args.AddRange([
+                "-b:v", $"{target}K",
+                "-maxrate", $"{TranscodePlanner.CalculateMaxRateKbps(target)}K",
+                "-bufsize", $"{TranscodePlanner.CalculateBufferSizeKbps(target)}K"
+            ]);
+        }
+        else
+        {
+            args.AddRange(["-crf", crf.ToString()]);
+        }
+
+        args.AddRange(["-c:a", "copy"]);
 
         if (includeSubtitles)
         {
