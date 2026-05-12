@@ -32,6 +32,8 @@ sudo apt install ffmpeg
 
 The `ffmpeg` package also includes `ffprobe`.
 
+On Windows, install ffmpeg and add its `bin` folder to `PATH`, or pass explicit binary paths with `--ffmpeg` and `--ffprobe`.
+
 ## Build
 
 From the repository root:
@@ -40,14 +42,44 @@ From the repository root:
 dotnet build batch-video-transcoder.sln
 ```
 
-## Recommended Workflow
+## Running the Application
 
-Generate the report first:
+You can run from source with `dotnet run`:
 
 ```bash
-dotnet run --project batch-video-transcoder -- report \
-  --root "/path/to/movies" \
-  --out "/path/to/transcode-report"
+dotnet run --project batch-video-transcoder -- report --root "/path/to/movies" --out "/path/to/transcode-report"
+```
+
+Or run the compiled executable after building:
+
+```bash
+./batch-video-transcoder/bin/Debug/net8.0/batch-video-transcoder report --root "/path/to/movies" --out "/path/to/transcode-report"
+```
+
+On Windows PowerShell:
+
+```powershell
+.\batch-video-transcoder\bin\Debug\net8.0\batch-video-transcoder.exe report --root "D:\Media\Movies" --out "D:\Media\transcode-report"
+```
+
+## CLI Examples
+
+Report only:
+
+```bash
+dotnet run --project batch-video-transcoder -- report --root "/path/to/movies" --out "/path/to/transcode-report"
+```
+
+Process every report row marked with `NeedsProcessing=true`:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --max-jobs 1
+```
+
+Process only DVD `VIDEO_TS` rows from an existing report:
+
+```bash
+dotnet run --project batch-video-transcoder -- transcode --report "/path/to/transcode-report/report.json" --dvd-only --max-jobs 1
 ```
 
 Process a small chunk of pending items:
@@ -200,6 +232,7 @@ This makes long runs safer: you can process 10, 20, or 50 items at a time and re
 - In `transcode` mode, rows with `Processed=true` are skipped.
 - If an output already exists and is accepted, the row is marked as processed.
 - `--take N` limits the current run to the first N pending rows.
+- `--dvd-only` restricts `transcode` mode to DVD `VIDEO_TS` rows only.
 - `--max-jobs N` controls how many ffmpeg jobs may run in parallel.
 - Each completed job prints progress, elapsed time, and estimated time remaining.
 

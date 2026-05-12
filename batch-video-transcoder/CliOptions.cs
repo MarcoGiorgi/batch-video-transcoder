@@ -44,6 +44,9 @@ public sealed class CliOptions
     /// <summary>True when cleanup mode should actually delete processed source files and DVD folders.</summary>
     public bool DeleteSources { get; private set; }
 
+    /// <summary>True when transcode mode should process only DVD VIDEO_TS report rows.</summary>
+    public bool DvdOnly { get; private set; }
+
     /// <summary>True when the user requested usage information.</summary>
     public bool ShowHelp { get; private set; }
 
@@ -79,6 +82,12 @@ public sealed class CliOptions
             if (key == "--delete-sources")
             {
                 options.DeleteSources = true;
+                continue;
+            }
+
+            if (key == "--dvd-only")
+            {
+                options.DvdOnly = true;
                 continue;
             }
 
@@ -202,7 +211,7 @@ public sealed class CliOptions
     {
         Console.WriteLine("Usage:");
         Console.WriteLine("  batch-video-transcoder.exe report --root \"/path/to/movies\" --out \"/path/to/transcode-report\" [--preset medium]");
-        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"/path/to/transcode-report/report.json\" [--preset medium] [--max-jobs 1] [--take 10] [--rate-control source-bitrate] [--size-margin-percent 3]");
+        Console.WriteLine("  batch-video-transcoder.exe transcode --report \"/path/to/transcode-report/report.json\" [--preset medium] [--max-jobs 1] [--take 10] [--dvd-only] [--rate-control source-bitrate] [--size-margin-percent 3]");
         Console.WriteLine("  batch-video-transcoder.exe verify --report \"/path/to/transcode-report/report.json\"");
         Console.WriteLine("  batch-video-transcoder.exe cleanup --report \"/path/to/transcode-report/report.json\" --delete-sources");
     }
